@@ -1,0 +1,30 @@
+dependencies:
+  espressif/esp-nn:
+    component_hash: 5d99b2991c109211ea5722bae481bbe243dc7e064d9ffd9e5dfa58aba7be9d88
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.1
+  espressif/esp-tflite-micro:
+    dependencies:
+    - name: idf
+      version: '>=4.4'
+    - name: espressif/esp-nn
+      version: ^1.1.0
+    source:
+      path: /home/eslab/sangjin/AutoTimes/esp-tflite-micro
+      type: local
+    version: '*'
+  idf:
+    source:
+      type: idf
+    version: 5.2.3
+direct_dependencies:
+- espressif/esp-tflite-micro
+manifest_hash: 18848151465374fa5519c3ec5d70ef347d0267f2d3577d6a921f6ab688555fd8
+target: esp32s3
+version: 2.0.0

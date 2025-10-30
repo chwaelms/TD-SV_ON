@@ -1,0 +1,6 @@
+eclipse.preferences.version=1
+environment/project/cdt.managedbuild.toolchain.gnu.cross.base.397045142/IDF_PATH/delimiter=;
+environment/project/cdt.managedbuild.toolchain.gnu.cross.base.397045142/IDF_PATH/operation=replace
+environment/project/cdt.managedbuild.toolchain.gnu.cross.base.397045142/IDF_PATH/value=D\:\\esp\\esp-idf-200522
+environment/project/cdt.managedbuild.toolchain.gnu.cross.base.397045142/append=true
+environment/project/cdt.managedbuild.toolchain.gnu.cross.base.397045142/appendContributed=true

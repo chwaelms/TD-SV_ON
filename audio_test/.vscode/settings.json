@@ -1,0 +1,6 @@
+{
+  "files.associations": {
+    "limits": "cpp",
+    "esp_log.h": "c"
+  }
+}

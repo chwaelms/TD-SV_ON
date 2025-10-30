@@ -1,0 +1,5 @@
+{
+    "files.associations": {
+        "ble_communication.h": "c"
+    }
+}

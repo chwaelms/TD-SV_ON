@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-Channel Audio Waveform Viewer</title>
+    <style>
+        .canvas-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+            margin: 10px 0;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            width: 100%;
+        }
+        #controls {
+            margin: 20px 0;
+        }
+        #status {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+        }
+        .section-title {
+            margin: 10px 0;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <button id="connect1">Connect to UART1</button>
+        <button id="connect2">Connect to UART2</button>
+        <button id="clear">Clear Display</button>
+    </div>
+    <div id="status">Status: Disconnected</div>
+    
+    <div class="section-title">Audio Data</div>
+    <div class="canvas-container">
+        <canvas id="waveform1"></canvas>
+        <canvas id="waveform2"></canvas>
+        <canvas id="waveform3"></canvas>
+        <canvas id="waveform4"></canvas>
+    </div>
+
+    <div class="section-title">IMU Data</div>
+    <div class="canvas-container">
+        <canvas id="accelCanvas"></canvas>
+        <canvas id="gyroCanvas"></canvas>
+    </div>
+
+    <script>
+    let port1, port2;
+    const audioDataChannels = [[], [], [], []];
+    const maxDataPoints = 16000;
+    const colors = ['#2196F3', '#4CAF50', '#FFC107', '#E91E63'];
+
+    const audioCanvases = [
+        document.getElementById('waveform1'),
+        document.getElementById('waveform2'),
+        document.getElementById('waveform3'),
+        document.getElementById('waveform4')
+    ];
+
+    const accelCanvas = document.getElementById('accelCanvas');
+    const gyroCanvas = document.getElementById('gyroCanvas');
+    const accelCtx = accelCanvas.getContext('2d');
+    const gyroCtx = gyroCanvas.getContext('2d');
+    const contexts = audioCanvases.map(canvas => canvas.getContext('2d'));
+    const statusDisplay = document.getElementById('status');
+
+    const allCanvases = [...audioCanvases, accelCanvas, gyroCanvas];
+    allCanvases.forEach(canvas => {
+        canvas.width = (window.innerWidth - 50) / 2;
+        canvas.height = 150;
+    });
+
+    const imuData = {
+        accel: { x: [], y: [], z: [] },
+        gyro: { x: [], y: [], z: [] }
+    };
+    const maxImuPoints = 1000;
+
+    async function connectToPort(portNumber) {
+        try {
+            const port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 115200 });
+            
+            const reader = port.readable.getReader();
+            
+            if(portNumber === 1) {
+                port1 = port;
+                readAudioData(reader);
+            } else {
+                port2 = port;
+                readIMUData(reader);
+            }
+            
+            statusDisplay.textContent = `Status: Connected to UART${portNumber}`;
+        } catch (error) {
+            console.error(`UART${portNumber} Error:`, error);
+            statusDisplay.textContent = `Status: Error - ${error.message}`;
+        }
+    }
+    let buffer = new Uint8Array(0);
+
+    async function readAudioData(reader) {
+        while (true) {
+            try {
+                const {value, done} = await reader.read();
+                if (done) break;
+                
+                // 기존 버퍼와 새 데이터 합치기
+                const newBuffer = new Uint8Array(buffer.length + value.length);
+                newBuffer.set(buffer);
+                newBuffer.set(value, buffer.length);
+                buffer = newBuffer;
+                
+                // 2바이트 단위로 처리 가능한 데이터만 사용
+                const processLength = Math.floor(buffer.length / 2) * 2;
+                if (processLength > 0) {
+                    const data = new Int16Array(buffer.buffer, 0, processLength / 2);
+                    processAudioData(data);
+                    
+                    // 남은 데이터 보존
+                    buffer = buffer.slice(processLength);
+                }
+            } catch (error) {
+                console.error("Error reading audio data:", error);
+                break;
+            }
+        }
+    }
+
+    async function readIMUData(reader) {
+        while (true) {
+            try {
+                const {value, done} = await reader.read();
+                if (done) break;
+                
+                const data = new Int16Array(value.buffer);
+                processIMUData(data);
+            } catch (error) {
+                console.error("Error reading IMU data:", error);
+                break;
+            }
+        }
+    }
+
+    function processAudioData(rawData) {
+        for (let i = 0; i < rawData.length; i += 2) {
+            const channelPairIndex = Math.floor((i/2) % 2);
+            const leftChannelIndex = channelPairIndex * 2;
+            const rightChannelIndex = channelPairIndex * 2 + 1;
+    
+            if (i < rawData.length) {
+                audioDataChannels[leftChannelIndex].push(rawData[i]);
+                if (audioDataChannels[leftChannelIndex].length > maxDataPoints) {
+                    audioDataChannels[leftChannelIndex] = 
+                        audioDataChannels[leftChannelIndex].slice(-maxDataPoints);
+                }
+            }
+            
+            if (i + 1 < rawData.length) {
+                audioDataChannels[rightChannelIndex].push(rawData[i + 1]);
+                if (audioDataChannels[rightChannelIndex].length > maxDataPoints) {
+                    audioDataChannels[rightChannelIndex] = 
+                        audioDataChannels[rightChannelIndex].slice(-maxDataPoints);
+                }
+            }
+        }
+        
+        for (let i = 0; i < 4; i++) {
+            drawWaveform(i);
+        }
+    }
+
+    function processIMUData(rawData) {
+        if (rawData.length !== 6) return;
+
+        imuData.accel.x.push(rawData[0]);
+        imuData.accel.y.push(rawData[1]);
+        imuData.accel.z.push(rawData[2]);
+
+        imuData.gyro.x.push(rawData[3]);
+        imuData.gyro.y.push(rawData[4]);
+        imuData.gyro.z.push(rawData[5]);
+
+        Object.values(imuData).forEach(sensor => {
+            Object.values(sensor).forEach(axis => {
+                if (axis.length > maxImuPoints) {
+                    axis.shift();
+                }
+            });
+        });
+
+        drawImuData();
+    }
+
+    function drawWaveform(channelIndex) {
+        const ctx = contexts[channelIndex];
+        const canvas = audioCanvases[channelIndex];
+        const audioData = audioDataChannels[channelIndex];
+
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.strokeStyle = '#ddd';
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+
+        const slicedData = audioData.slice(-maxDataPoints);
+        const step = canvas.width / slicedData.length;
+        const amplification = 10;
+        const scale = (canvas.height / 65536) * amplification;
+
+        ctx.beginPath();
+        ctx.strokeStyle = colors[channelIndex];
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i < slicedData.length; i++) {
+            const x = i * step;
+            const y = (canvas.height / 2) + (slicedData[i] * scale);
+            
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        
+        ctx.stroke();
+    }
+
+    function drawImuData() {
+        drawSensorData(accelCtx, imuData.accel, ['#FF0000', '#00FF00', '#0000FF'], 'Accelerometer');
+        drawSensorData(gyroCtx, imuData.gyro, ['#FF4444', '#44FF44', '#4444FF'], 'Gyroscope');
+    }
+
+    function drawSensorData(ctx, data, colors, title) {
+        const canvas = ctx.canvas;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.strokeStyle = '#ddd';
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+
+        ['x', 'y', 'z'].forEach((axis, index) => {
+            const values = data[axis];
+            const step = canvas.width / values.length;
+            
+            ctx.beginPath();
+            ctx.strokeStyle = colors[index];
+            ctx.lineWidth = 1;
+
+            values.forEach((value, i) => {
+                const x = i * step;
+                const y = (canvas.height / 2) - (value / 100);
+                
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            
+            ctx.stroke();
+        });
+
+        ctx.font = '12px Arial';
+        ctx.fillStyle = 'black';
+        ctx.fillText(title, 10, 20);
+        ['X', 'Y', 'Z'].forEach((label, i) => {
+            ctx.fillStyle = colors[i];
+            ctx.fillText(label, 100 + i * 40, 20);
+        });
+    }
+
+    document.getElementById('connect1').addEventListener('click', () => connectToPort(1));
+    document.getElementById('connect2').addEventListener('click', () => connectToPort(2));
+    document.getElementById('clear').addEventListener('click', () => {
+        audioDataChannels.forEach(channel => channel.length = 0);
+        for (let i = 0; i < 4; i++) {
+            drawWaveform(i);
+        }
+        statusDisplay.textContent = "Status: Display Cleared";
+    });
+
+    window.addEventListener('resize', () => {
+        allCanvases.forEach(canvas => {
+            canvas.width = (window.innerWidth - 50) / 2;
+        });
+        for (let i = 0; i < 4; i++) {
+            drawWaveform(i);
+        }
+    });
+
+    for (let i = 0; i < 4; i++) {
+        drawWaveform(i);
+    }
+    </script>
+</body>
+</html>

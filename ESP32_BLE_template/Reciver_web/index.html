@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>BLE Data Viewer</title>
+    <style>
+        #dataDisplay {
+            width: 100%;
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <button id="connect">Connect to BLE Device</button>
+    <div id="dataDisplay"></div>
+
+    <script>
+    const serviceUUID = 0x00FF;             // 펌웨어 service uuid와 일치 시켜야합니다.
+    const characteristicUUID = 0xFF01;      // 펌웨어 characteristic uuid와 일치 시켜야합니다.
+    const options = {
+        filters:[{services: [serviceUUID]}],
+        optionalServices: []
+    };
+
+    const dataDisplay = document.getElementById('dataDisplay');
+
+    function handleVauleChange(event) {
+        const data = new Uint8Array(event.target.value.buffer);   // 받는 데이터유형에 따라 자료형 다르게 설정해야합니다.
+        if (data.length != 1) {
+            const dataStr = Array.from(data).join(', ');
+            const newLine = document.createElement('div');
+            newLine.textContent = dataStr;
+            dataDisplay.appendChild(newLine);
+            dataDisplay.scrollTop = dataDisplay.scrollHeight; // 자동 스크롤
+        }
+    }
+
+    document.getElementById('connect').addEventListener('click', async() => {
+        try {
+            device = await navigator.bluetooth.requestDevice(options);
+            const server = await device.gatt.connect();
+            console.log("Server connected!")
+            const service = await server.getPrimaryService(serviceUUID);
+            console.log("Service connected!")
+            characteristic = await service.getCharacteristic(characteristicUUID);
+            console.log("Characteristic connected!")
+            await characteristic.startNotifications();
+            console.log("Characteristic start notifications!")
+            characteristic.addEventListener(
+                "characteristicvaluechanged",
+                handleVauleChange
+            );
+        } catch (error) {
+            console.error("Bluetooth 장치 요청 오류:", error);
+        }
+    });
+    </script>
+</body>
+</html>

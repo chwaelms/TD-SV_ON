@@ -1,0 +1,40 @@
+menu "Device Configuration"
+
+config STA_SSID
+    string "In Staton mode, To try connecting AP SSID"
+    default "esp32"
+
+
+config STA_PWD
+    string "In Staton mode, To try connecting AP PWD"
+    default "esp32pwd"
+
+config AP_SSID
+    string "AP mode SSID"
+    default "soosangST"
+
+config AP_PWD
+    string "AP mode PWD"
+    default "soosangST"
+	
+config NAME
+    string "Set Device Name"
+    default "SOOSANGST"
+		
+config TCP_IP
+	string "Socket Sever ip"
+	default "1.234.51.99"
+		
+config TCP_PORT
+	int "Socket Sever Port"
+	default 5555
+
+config MQTT_IP
+	string "MQTT ip"
+	default "1.234.51.99"
+		
+config MQTT_PORT
+	int "MQTT Port"
+	default 5556
+	
+endmenu

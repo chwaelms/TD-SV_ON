@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "string.h": "c",
+        "mfcc_filters.h": "c",
+        "time.h": "c",
+        "stdlib.h": "c",
+        "math.h": "c",
+        "stdio.h": "c",
+        "speaker_verifier.h": "c"
+    }
+}

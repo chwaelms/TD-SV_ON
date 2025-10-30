@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Audio Player</title>
+    <style>
+        #status {
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <button id="connect">Connect to BLE Device</button>
+    <div id="status">Status: Disconnected</div>
+
+    <script>
+    const serviceUUID = 0x00FF;
+    const characteristicUUID = 0xFF01;
+    const options = {
+        filters:[{services: [serviceUUID]}],
+        optionalServices: []
+    };
+
+    const statusDisplay = document.getElementById('status');
+    
+    // 오디오 컨텍스트 설정
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const sampleRate = 16000;
+    let scriptNode = null;
+    
+    // 오디오 버퍼 설정
+    const bufferSize = 2048;
+    let audioBuffer = new Float32Array(bufferSize);
+    let bufferIndex = 0;
+
+    function initAudioProcessor() {
+        scriptNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+        scriptNode.onaudioprocess = function(audioProcessingEvent) {
+            const outputBuffer = audioProcessingEvent.outputBuffer;
+            const outputData = outputBuffer.getChannelData(0);
+            
+            // 버퍼의 데이터를 출력으로 복사
+            for (let i = 0; i < bufferSize; i++) {
+                outputData[i] = audioBuffer[i];
+                audioBuffer[i] = 0; // 버퍼 초기화
+            }
+        };
+        
+        scriptNode.connect(audioContext.destination);
+    }
+
+    function handleAudioData(data) {
+        const int16Array = new Int16Array(data.buffer);
+        
+        // Int16 데이터를 Float32로 변환 (-32768~32767 -> -1.0~1.0)
+        for (let i = 0; i < int16Array.length; i++) {
+            const floatSample = int16Array[i] / 32768.0;
+            audioBuffer[bufferIndex] = floatSample;
+            
+            bufferIndex++;
+            if (bufferIndex >= bufferSize) {
+                bufferIndex = 0;
+            }
+        }
+    }
+
+    function handleValueChange(event) {
+        const data = event.target.value;
+        handleAudioData(data);
+    }
+
+    document.getElementById('connect').addEventListener('click', async() => {
+        try {
+            // 오디오 컨텍스트 시작
+            await audioContext.resume();
+            initAudioProcessor();
+
+            device = await navigator.bluetooth.requestDevice(options);
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(serviceUUID);
+            characteristic = await service.getCharacteristic(characteristicUUID);
+            await characteristic.startNotifications();
+            
+            characteristic.addEventListener(
+                "characteristicvaluechanged",
+                handleValueChange
+            );
+
+            statusDisplay.textContent = "Status: Connected and Playing";
+            
+        } catch (error) {
+            console.error("Error:", error);
+            statusDisplay.textContent = "Status: Error - " + error.message;
+        }
+    });
+
+    // 페이지 언로드 시 정리
+    window.addEventListener('beforeunload', () => {
+        if (scriptNode) {
+            scriptNode.disconnect();
+        }
+        if (audioContext) {
+            audioContext.close();
+        }
+    });
+    </script>
+</body>
+</html>

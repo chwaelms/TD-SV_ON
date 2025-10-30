@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-Channel Audio Waveform Viewer</title>
+    <style>
+        .canvas-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px; 
+            margin: 10px 0;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            width: 100%;
+        }
+        #controls {
+            margin: 20px 0;
+        }
+        #status {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+        }
+        .section-title {
+            margin: 10px 0;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <button id="connect">Connect to BLE Device</button>
+        <button id="clear">Clear Display</button>
+    </div>
+    <div id="status">Status: Disconnected</div>
+    
+    <div class="section-title">Audio Data</div>
+    <div class="canvas-container">
+        <canvas id="waveform1"></canvas>
+        <canvas id="waveform2"></canvas>
+        <canvas id="waveform3"></canvas>
+        <canvas id="waveform4"></canvas>
+    </div>
+
+    <div class="section-title">IMU Data</div>
+    <div class="canvas-container">
+        <canvas id="accelCanvas"></canvas>
+        <canvas id="gyroCanvas"></canvas>
+    </div>
+
+    <script>
+    const serviceUUID = 0x00FF;
+    const micCharacteristicUUID = 0xFF01;
+    const imuCharacteristicUUID = 0xFF02;
+
+    let micCharacteristic;
+    let imuCharacteristic;
+
+    const options = {
+        filters:[{services: [serviceUUID]}],
+        optionalServices: []
+    };
+
+    const audioCanvases = [
+        document.getElementById('waveform1'),
+        document.getElementById('waveform2'),
+        document.getElementById('waveform3'),
+        document.getElementById('waveform4')
+    ];
+
+    const accelCanvas = document.getElementById('accelCanvas');
+    const gyroCanvas = document.getElementById('gyroCanvas');
+    const accelCtx = accelCanvas.getContext('2d');
+    const gyroCtx = gyroCanvas.getContext('2d');
+    
+    const contexts = audioCanvases.map(canvas => canvas.getContext('2d'));
+    const statusDisplay = document.getElementById('status');
+    
+    // 캔버스 크기 설정
+    const allCanvases = [...audioCanvases, accelCanvas, gyroCanvas];
+    allCanvases.forEach(canvas => {
+        canvas.width = (window.innerWidth - 50) / 2;
+        canvas.height = 150;
+    });
+
+    // 각 채널별 오디오 데이터 배열
+    const audioDataChannels = [[], [], [], []];
+    const maxDataPoints = 16000; // 16000Hz * 1초
+    const colors = ['#2196F3', '#4CAF50', '#FFC107', '#E91E63'];
+
+    const imuData = {
+        accel: { x: [], y: [], z: [] },
+        gyro: { x: [], y: [], z: [] }
+    };
+    const maxImuPoints = 1000;
+
+    function handleImuData(event) {
+        const rawData = new Int16Array(event.target.value.buffer);
+        if (rawData.length !== 6) return; // 6개의 16비트 값 (가속도 XYZ, 자이로 XYZ)
+        
+        // 가속도계: ±2g 범위 (32768/2 = 16384)
+        const accelScale = 16384;
+        // 자이로스코프: ±250°/s 범위 (32768/250 ≈ 131)
+        const gyroScale = 131;
+
+        // 가속도 데이터 처리 - g 단위로 변환
+        imuData.accel.x.push(rawData[0] / accelScale);
+        imuData.accel.y.push(rawData[1] / accelScale);
+        imuData.accel.z.push(rawData[2] / accelScale);
+
+        // 자이로 데이터 처리 - 도/초 단위로 변환
+        imuData.gyro.x.push(rawData[3] / gyroScale);
+        imuData.gyro.y.push(rawData[4] / gyroScale);
+        imuData.gyro.z.push(rawData[5] / gyroScale);
+
+        // 배열 크기 제한
+        Object.values(imuData).forEach(sensor => {
+            Object.values(sensor).forEach(axis => {
+                if (axis.length > maxImuPoints) {
+                    axis.shift();
+                }
+            });
+        });
+
+        drawImuData();
+    }
+
+    function drawImuData() {
+        // 가속도 그래프 그리기
+        drawSensorData(accelCtx, imuData.accel, ['#FF0000', '#00FF00', '#0000FF'], 'Accelerometer');
+        
+        // 자이로 그래프 그리기
+        drawSensorData(gyroCtx, imuData.gyro, ['#FF4444', '#44FF44', '#4444FF'], 'Gyroscope');
+    }
+
+    function drawSensorData(ctx, data, colors, title) {
+        const canvas = ctx.canvas;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 중심선
+        ctx.strokeStyle = '#ddd';
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+
+        // 각 축 데이터 그리기
+        ['x', 'y', 'z'].forEach((axis, index) => {
+            const values = data[axis];
+            const step = canvas.width / values.length;
+            
+            ctx.beginPath();
+            ctx.strokeStyle = colors[index];
+            ctx.lineWidth = 1;
+            
+            // 이미 스케일링된 값을 표시용으로만 조정
+            const displayScale = title === 'Accelerometer' ? 30000 : 20;
+            values.forEach((value, i) => {
+                const x = i * step;
+                const y = (canvas.height / 2) - (value * displayScale);
+                
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            
+            ctx.stroke();
+        });
+
+        // 범례
+        ctx.font = '12px Arial';
+        ctx.fillStyle = 'black';
+        ctx.fillText(title, 10, 20);
+        ['X', 'Y', 'Z'].forEach((label, i) => {
+            ctx.fillStyle = colors[i];
+            ctx.fillText(label, 100 + i * 40, 20);
+        });
+    }
+
+    function drawWaveform(channelIndex) {
+        const ctx = contexts[channelIndex];
+        const canvas = audioCanvases[channelIndex];
+        const audioData = audioDataChannels[channelIndex];
+
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // 중심선 그리기
+        ctx.strokeStyle = '#ddd';
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+
+        // 파형 그리기
+        const slicedData = audioData.slice(-maxDataPoints);
+        const step = canvas.width / slicedData.length;
+        const amplification = 10;
+        const scale = (canvas.height / 65536) * amplification;
+
+        ctx.beginPath();
+        ctx.strokeStyle = colors[channelIndex];
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i < slicedData.length; i++) {
+            const x = i * step;
+            const y = (canvas.height / 2) + (slicedData[i] * scale);
+            
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        
+        ctx.stroke();
+    }
+
+    function handleValueChange(event) {
+        const rawData = new Int16Array(event.target.value.buffer);
+        
+        // 데이터 구조 로깅
+        console.log("Received data length:", rawData.length);
+        console.log("First few samples:", rawData.slice(0, 8));
+    
+        // 스테레오 페어를 4개의 채널로 분리
+        for (let i = 0; i < rawData.length; i += 2) {
+            const channelPairIndex = Math.floor((i/2) % 2); // 0 또는 1
+            
+            // 첫 번째 스테레오 페어는 채널 0,1에
+            // 두 번째 스테레오 페어는 채널 2,3에 할당
+            const leftChannelIndex = channelPairIndex * 2;
+            const rightChannelIndex = channelPairIndex * 2 + 1;
+    
+            if (i < rawData.length) {
+                audioDataChannels[leftChannelIndex].push(rawData[i]);
+                if (audioDataChannels[leftChannelIndex].length > maxDataPoints) {
+                    audioDataChannels[leftChannelIndex] = 
+                        audioDataChannels[leftChannelIndex].slice(-maxDataPoints);
+                }
+            }
+            
+            if (i + 1 < rawData.length) {
+                audioDataChannels[rightChannelIndex].push(rawData[i + 1]);
+                if (audioDataChannels[rightChannelIndex].length > maxDataPoints) {
+                    audioDataChannels[rightChannelIndex] = 
+                        audioDataChannels[rightChannelIndex].slice(-maxDataPoints);
+                }
+            }
+        }
+        
+        // 각 채널 파형 업데이트
+        for (let i = 0; i < 4; i++) {
+            drawWaveform(i);
+        }
+        
+        const avgTime = audioDataChannels[0].length / 16000;
+        statusDisplay.textContent = 
+            `Status: Receiving Data (${avgTime.toFixed(1)} seconds) - Buffer size: ${rawData.length}`;
+    }
+    
+
+    document.getElementById('connect').addEventListener('click', async() => {
+        try {
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{services: [serviceUUID]}]
+            });
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(serviceUUID);
+            
+            // 마이크 특성 설정
+            micCharacteristic = await service.getCharacteristic(micCharacteristicUUID);
+            await micCharacteristic.startNotifications();
+            micCharacteristic.addEventListener('characteristicvaluechanged', handleValueChange);
+            
+            // IMU 특성 설정
+            imuCharacteristic = await service.getCharacteristic(imuCharacteristicUUID);
+            await imuCharacteristic.startNotifications();
+            imuCharacteristic.addEventListener('characteristicvaluechanged', handleImuData);
+
+            statusDisplay.textContent = "Status: Connected and Receiving";
+            
+        } catch (error) {
+            console.error("Bluetooth Error:", error);
+            statusDisplay.textContent = "Status: Error - " + error.message;
+        }
+    });
+
+    document.getElementById('clear').addEventListener('click', () => {
+        audioDataChannels.forEach(channel => channel.length = 0);
+        for (let i = 0; i < 4; i++) {
+            drawWaveform(i);
+        }
+        statusDisplay.textContent = "Status: Display Cleared";
+    });
+
+    // 초기 화면 그리기
+    for (let i = 0; i < 4; i++) {
+        drawWaveform(i);
+    }
+
+    // 창 크기 변경 시 캔버스 크기 조정
+    window.addEventListener('resize', () => {
+        allCanvases.forEach(canvas => {
+            canvas.width = (window.innerWidth - 50) / 2;
+        });
+        for (let i = 0; i < 4; i++) {
+            drawWaveform(i);
+        }
+    });
+    </script>
+</body>
+</html>

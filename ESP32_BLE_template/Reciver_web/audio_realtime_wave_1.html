@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Audio Waveform Viewer</title>
+    <style>
+        canvas {
+            border: 1px solid #ccc;
+            margin: 20px 0;
+        }
+        #controls {
+            margin: 20px 0;
+        }
+        #status {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <button id="connect">Connect to BLE Device</button>
+        <button id="clear">Clear Display</button>
+    </div>
+    <div id="status">Status: Disconnected</div>
+    <canvas id="waveform"></canvas>
+
+    <script>
+    const serviceUUID = 0x00FF;
+    const characteristicUUID = 0xFF01;
+    const options = {
+        filters:[{services: [serviceUUID]}],
+        optionalServices: []
+    };
+
+    const canvas = document.getElementById('waveform');
+    const ctx = canvas.getContext('2d');
+    const statusDisplay = document.getElementById('status');
+    
+    // 캔버스 크기 설정
+    canvas.width = window.innerWidth - 40;
+    canvas.height = 400;
+
+    let audioData = [];
+    const maxDataPoints = 32000; // 16000Hz * 2초
+
+    function drawWaveform() {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.beginPath();
+        ctx.strokeStyle = '#2196F3';
+        ctx.lineWidth = 1;
+
+        const slicedData = audioData.slice(-maxDataPoints);
+        const step = canvas.width / slicedData.length;
+        
+        // 스케일 조정 (증폭)
+        const amplification = 10; // 증폭 계수
+        const scale = (canvas.height / 65536) * amplification;
+
+        // 중심선 그리기
+        ctx.strokeStyle = '#ddd';
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+
+        // 파형 그리기
+        ctx.strokeStyle = '#2196F3';
+        ctx.beginPath();
+        
+        for (let i = 0; i < slicedData.length; i++) {
+            const x = i * step;
+            const y = (canvas.height / 2) + (slicedData[i] * scale);
+            
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        
+        ctx.stroke();
+    }
+
+    function handleValueChange(event) {
+        const data = new Int16Array(event.target.value.buffer);
+        audioData.push(...data);
+        
+        // 버퍼 크기 제한
+        if (audioData.length > maxDataPoints) {
+            audioData = audioData.slice(-maxDataPoints);
+        }
+        
+        drawWaveform();
+        statusDisplay.textContent = `Status: Receiving Data (${(audioData.length / 16000).toFixed(1)} seconds)`;
+    }
+
+    document.getElementById('connect').addEventListener('click', async() => {
+        try {
+            device = await navigator.bluetooth.requestDevice(options);
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(serviceUUID);
+            characteristic = await service.getCharacteristic(characteristicUUID);
+            await characteristic.startNotifications();
+            
+            characteristic.addEventListener(
+                "characteristicvaluechanged",
+                handleValueChange
+            );
+
+            statusDisplay.textContent = "Status: Connected and Receiving";
+            
+        } catch (error) {
+            console.error("Bluetooth Error:", error);
+            statusDisplay.textContent = "Status: Error - " + error.message;
+        }
+    });
+
+    document.getElementById('clear').addEventListener('click', () => {
+        audioData = [];
+        drawWaveform();
+        statusDisplay.textContent = "Status: Display Cleared";
+    });
+
+    // 초기 화면 그리기
+    drawWaveform();
+
+    // 창 크기 변경 시 캔버스 크기 조정
+    window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth - 40;
+        drawWaveform();
+    });
+    </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Espressif ESP32 Partition Table
+# Name,  Type, SubType, Offset,     Size
+factory, app,  factory, 0x010000,   2M
+phy_init,data, phy,     ,           4K
+nvs,     data, nvs,     ,           350K
+fr,      32,   32,      ,           128K
+
+
+# 128K = 0x2 0000
+# 1M : 0x10 0000
+# 0x1000 : 4k
+# 0x1 0000 : 64k
+# 0xF0000 / 983,040 / 960KB
+# 0x3 2000 / 204,800 / 200K
